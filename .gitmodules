@@ -1,7 +1,3 @@
 [submodule "cpp/YAKL"]
 	path = cpp/YAKL
 	url = https://github.com/lorenzo-carpentieri/YAKL.git
-
-[submodule "cpp/SYnergy"]
-	path = cpp/SYnergy
-	url = https://github.com/emdant/SYnergy.git
