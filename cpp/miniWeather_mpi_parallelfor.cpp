@@ -883,7 +883,7 @@ void reductions( realConst3d state, double &mass , double &te , Fixed_data const
     double ie = r*cv*t;                                          // Internal Energy
     mass2d(k,i) = r        *dx*dz; // Accumulate domain mass
     te2d  (k,i) = (ke + ie)*dx*dz; // Accumulate domain total energy
-  }, "reductions_1",  yakl::LaunchConfig<>());
+  }, "reductions_1");
   mass = yakl::intrinsics::sum( mass2d );
   te   = yakl::intrinsics::sum( te2d   );
 
