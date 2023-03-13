@@ -237,7 +237,7 @@ void semi_discrete_step( realConst3d state_init , real3d const &state_forcing , 
       tend(ID_WMOM,k,i) += wpert*hy_dens_cell(hs+k);
     }
     state_out(ll,hs+k,hs+i) = state_init(ll,hs+k,hs+i) + dt * tend(ll,k,i);
-  }, "semi_discret_step");
+  }, "semi_discret_step_1");
   yakl::timer_stop("apply tendencies");
 }
 
