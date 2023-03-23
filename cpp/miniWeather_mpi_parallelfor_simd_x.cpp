@@ -238,7 +238,7 @@ void semi_discrete_step( realConst3d state_init , real3d const &state_forcing , 
       tend(ID_WMOM,k,i) += wpert*hy_dens_cell(hs+k);
     }
     state_out(ll,hs+k,hs+i) = state_init(ll,hs+k,hs+i) + dt * tend(ll,k,i);
-  });
+  }, "semi_discrete_step_1");
   yakl::timer_stop("apply tendencies");
 }
 
@@ -301,7 +301,7 @@ void compute_tendencies_x( realConst3d state , real3d const &tend , real dt , Fi
       flux(ID_WMOM,k,i) = f3(ilane);
       flux(ID_RHOT,k,i) = f4(ilane);
     } , PackIterConfig<simd_len,true>() );
-  });
+  }, "compute_tendencies_x_1");
 
   //Use the fluxes to compute tendencies for each cell
   // for (ll=0; ll<NUM_VARS; ll++) {
@@ -309,7 +309,7 @@ void compute_tendencies_x( realConst3d state , real3d const &tend , real dt , Fi
   //     for (i=0; i<nx; i++) {
   parallel_for( SimpleBounds<3>(NUM_VARS,nz,nx) , YAKL_LAMBDA ( int ll, int k, int i ) {
     tend(ll,k,i) = -( flux(ll,k,i+1) - flux(ll,k,i) ) / dx;
-  });
+  }, "compute_tendencies_x_2");
 }
 
 
@@ -376,7 +376,7 @@ void compute_tendencies_z( realConst3d state , real3d const &tend , real dt , Fi
       flux(ID_WMOM,k,i) = f3(ilane);
       flux(ID_RHOT,k,i) = f4(ilane);
     } , PackIterConfig<simd_len,true>() );
-  });
+  }, "compute_tendencies_z_2");
 
   //Use the fluxes to compute tendencies for each cell
   // for (ll=0; ll<NUM_VARS; ll++) {
@@ -387,7 +387,7 @@ void compute_tendencies_z( realConst3d state , real3d const &tend , real dt , Fi
     if (ll == ID_WMOM) {
       tend(ll,k,i) -= state(ID_DENS,hs+k,hs+i)*grav;
     }
-  });
+  }, "compute_tendencies_z_3");
 }
 
 
@@ -412,7 +412,7 @@ void set_halo_values_x( real3d const &state , Fixed_data const &fixed_data ) {
       state(ll,hs+k,1      ) = state(ll,hs+k,nx+hs-1);
       state(ll,hs+k,nx+hs  ) = state(ll,hs+k,hs     );
       state(ll,hs+k,nx+hs+1) = state(ll,hs+k,hs+1   );
-    });
+    }, "set_halo_values_x_1");
     return;
   }
 
@@ -436,7 +436,7 @@ void set_halo_values_x( real3d const &state , Fixed_data const &fixed_data ) {
   parallel_for( SimpleBounds<3>(NUM_VARS,nz,hs) , YAKL_LAMBDA (int ll, int k, int s) {
     sendbuf_l(ll,k,s) = state(ll,k+hs,hs+s);
     sendbuf_r(ll,k,s) = state(ll,k+hs,nx+s);
-  });
+  }, "set_halo_values_x_2");
   yakl::fence();
 
   // This will copy from GPU to host
@@ -463,7 +463,7 @@ void set_halo_values_x( real3d const &state , Fixed_data const &fixed_data ) {
   parallel_for( SimpleBounds<3>(NUM_VARS,nz,hs) , YAKL_LAMBDA (int ll, int k, int s) {
     state(ll,k+hs,s      ) = recvbuf_l(ll,k,s);
     state(ll,k+hs,nx+hs+s) = recvbuf_r(ll,k,s);
-  });
+  }, "set_halo_values_x_3");
   yakl::fence();
 
   //Wait for sends to finish
@@ -479,7 +479,7 @@ void set_halo_values_x( real3d const &state , Fixed_data const &fixed_data ) {
           state(ID_UMOM,hs+k,i) = (state(ID_DENS,hs+k,i)+hy_dens_cell(hs+k)) * 50.;
           state(ID_RHOT,hs+k,i) = (state(ID_DENS,hs+k,i)+hy_dens_cell(hs+k)) * 298. - hy_dens_theta_cell(hs+k);
         }
-      });
+      }, "set_halo_values_x_4");
     }
   }
 }
@@ -511,7 +511,7 @@ void set_halo_values_z( real3d const &state , Fixed_data const &fixed_data ) {
       state(ll,nz+hs  ,i) = state(ll,nz+hs-1,i);
       state(ll,nz+hs+1,i) = state(ll,nz+hs-1,i);
     }
-  });
+  }, "set_halo_values_z_1");
 }
 
 
@@ -603,7 +603,7 @@ void init( real3d &state , real &dt , Fixed_data &fixed_data ) {
         state(ID_RHOT,k,i) += ( (r+hr)*(t+ht) - hr*ht ) * qweights(ii)*qweights(kk);
       }
     }
-  });
+  }, "init_1");
 
   real1d hy_dens_cell      ("hy_dens_cell      ",nz+2*hs);
   real1d hy_dens_theta_cell("hy_dens_theta_cell",nz+2*hs);
@@ -628,7 +628,7 @@ void init( real3d &state , real &dt , Fixed_data &fixed_data ) {
       hy_dens_cell      (k) = hy_dens_cell      (k) + hr    * qweights(kk);
       hy_dens_theta_cell(k) = hy_dens_theta_cell(k) + hr*ht * qweights(kk);
     }
-  });
+  }, "init_2");
   //Compute the hydrostatic background state at vertical cell interfaces
   // for (int k=0; k<nz+1; k++) {
   parallel_for( nz+1 , YAKL_LAMBDA (int k) {
@@ -642,7 +642,7 @@ void init( real3d &state , real &dt , Fixed_data &fixed_data ) {
     hy_dens_int      (k) = hr;
     hy_dens_theta_int(k) = hr*ht;
     hy_pressure_int  (k) = C0*pow((hr*ht),gamm);
-  });
+  }, "init_3");
 
   fixed_data.hy_dens_cell       = realConst1d(hy_dens_cell      );
   fixed_data.hy_dens_theta_cell = realConst1d(hy_dens_theta_cell);
@@ -824,7 +824,7 @@ void output( realConst3d state , real etime , int &num_out , Fixed_data const &f
     uwnd (k,i) = state(ID_UMOM,hs+k,hs+i) / ( hy_dens_cell(hs+k) + state(ID_DENS,hs+k,hs+i) );
     wwnd (k,i) = state(ID_WMOM,hs+k,hs+i) / ( hy_dens_cell(hs+k) + state(ID_DENS,hs+k,hs+i) );
     theta(k,i) = ( state(ID_RHOT,hs+k,hs+i) + hy_dens_theta_cell(hs+k) ) / ( hy_dens_cell(hs+k) + state(ID_DENS,hs+k,hs+i) ) - hy_dens_theta_cell(hs+k) / hy_dens_cell(hs+k);
-  });
+  }, "output_1");
   yakl::fence();
 
   //Write the grid data to file with all the processes writing collectively
@@ -893,7 +893,7 @@ void reductions( realConst3d state, double &mass , double &te , Fixed_data const
     double ie = r*cv*t;                                          // Internal Energy
     mass2d(k,i) = r        *dx*dz; // Accumulate domain mass
     te2d  (k,i) = (ke + ie)*dx*dz; // Accumulate domain total energy
-  });
+  }, "reductions_1");
   mass = yakl::intrinsics::sum( mass2d );
   te   = yakl::intrinsics::sum( te2d   );
 
