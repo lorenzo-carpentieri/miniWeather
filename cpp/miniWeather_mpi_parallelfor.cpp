@@ -135,6 +135,24 @@ int main(int argc, char **argv) {
       }
     }
     yakl::fence();
+
+    int comm_rank = -1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &comm_rank);
+
+    MPI_Comm local_comm;
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, comm_rank, MPI_INFO_NULL, &local_comm);
+
+    int local_comm_rank = -1;
+    MPI_Comm_rank(local_comm, &local_comm_rank);
+    char node_name[MPI_MAX_PROCESSOR_NAME];
+    int node_name_len = 0;
+    MPI_Get_processor_name(node_name, &node_name_len);
+
+    #ifdef SYNERGY_ENABLE_PROFILING 
+      auto &q = sycl_default_stream();
+      std::cout << "Node name: "<< node_name << ", rank: "<< comm_rank << ", local_rank: "<< local_comm_rank <<  ", device_energy_consumption [J]: "<< q.device_energy_consumption() << std::endl;
+    #endif
+
     auto t2 = std::chrono::steady_clock::now();
     if (mainproc) {
       std::cout << "CPU Time: " << std::chrono::duration<double>(t2-t1).count() << " sec\n";
