@@ -795,7 +795,7 @@ void output( realConst3d state , real etime , int &num_out , Fixed_data const &f
   doub2d uwnd ( "uwnd"     , nz,nx );
   doub2d wwnd ( "wwnd"     , nz,nx );
   doub2d theta( "theta"    , nz,nx );
-
+  /*
   //If the elapsed time is zero, create the file. Otherwise, open the file
   if (etime == 0) {
     //Create the file
@@ -824,7 +824,7 @@ void output( realConst3d state , real etime , int &num_out , Fixed_data const &f
     ncwrap( ncmpi_inq_varid( ncid , "theta" , &theta_varid ) , __LINE__ );
     ncwrap( ncmpi_inq_varid( ncid , "t"     ,     &t_varid ) , __LINE__ );
   }
-
+  */
   //Store perturbed values in the temp arrays for output
   // for (k=0; k<nz; k++) {
   //   for (i=0; i<nx; i++) {
@@ -835,7 +835,7 @@ void output( realConst3d state , real etime , int &num_out , Fixed_data const &f
     theta(k,i) = ( state(ID_RHOT,hs+k,hs+i) + hy_dens_theta_cell(hs+k) ) / ( hy_dens_cell(hs+k) + state(ID_DENS,hs+k,hs+i) ) - hy_dens_theta_cell(hs+k) / hy_dens_cell(hs+k);
   }, "output_1");
   yakl::fence();
-
+  /*
   //Write the grid data to file with all the processes writing collectively
   st3[0] = num_out; st3[1] = k_beg; st3[2] = i_beg;
   ct3[0] = 1      ; ct3[1] = nz   ; ct3[2] = nx   ;
@@ -862,6 +862,7 @@ void output( realConst3d state , real etime , int &num_out , Fixed_data const &f
 
   //Increment the number of outputs
   num_out = num_out + 1;
+  */
 }
 
 
