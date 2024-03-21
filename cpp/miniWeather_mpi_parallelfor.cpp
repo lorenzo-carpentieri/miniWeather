@@ -117,7 +117,13 @@ int main(int argc, char **argv)
     // MAIN TIME STEP LOOP
     ////////////////////////////////////////////////////
     yakl::fence();
-    auto t1 = std::chrono::steady_clock::now();
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    double start_time, end_time;
+
+    // Record start time
+    start_time = MPI_Wtime();
+  
     while (etime < sim_time)
     {
       // If the time step leads to exceeding the simulation time, shorten it for the last step
@@ -125,15 +131,18 @@ int main(int argc, char **argv)
       {
         dt = sim_time - etime;
       }
+      // BCast
+
+      // kernel 
       // Perform a single time step
       perform_timestep(state, dt, direction_switch, fixed_data);
 // Inform the user
-#ifndef NO_INFORM
+// #ifndef NO_INFORM
       if (mainproc)
       {
         printf("Elapsed Time: %lf / %lf\n", etime, sim_time);
       }
-#endif
+// #endif
       // Update the elapsed time and output counter
       etime = etime + dt;
       output_counter = output_counter + dt;
@@ -160,15 +169,30 @@ int main(int argc, char **argv)
 
 #ifdef SYNERGY_ENABLE_PROFILING
     auto &q = yakl::sycl_default_stream();
-    std::cout << "Node name: " << node_name << ", rank: " << comm_rank << ", local_rank: " << local_comm_rank << ", device_energy_consumption [J]: " << q.device_energy_consumption() << std::endl;
+    double energy_per_gpu = q.device_energy_consumption();
+    // std::cout << "Node name: " << node_name << ", rank: " << comm_rank << ", local_rank: " << local_comm_rank << ", device_energy_consumption [J]: " << q.device_energy_consumption() << std::endl;
 #endif
+    auto t2 = std::chrono::high_resolution_clock::now();
+    end_time = MPI_Wtime();
+    
+    double total_time_mpi = end_time - start_time;
+    double max_time = 0;
+    MPI_Reduce(&total_time_mpi, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    auto t2 = std::chrono::steady_clock::now();
+    auto total_time_chrono = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1); 
+
     if (mainproc)
     {
-      std::cout << "CPU Time: " << std::chrono::duration<double>(t2 - t1).count() << " sec\n";
+      std::cout << "Total time chrono[ms]: " << total_time_chrono.count() << "\n";
+      std::cout << "Total time mpi[ms]: " << max_time << "\n";
     }
-
+    double total_energy=0;
+    MPI_Reduce(&energy_per_gpu, &total_energy, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (mainproc)
+    {
+      std::cout << "Total energy: " << total_energy << "\n";
+    }
     // Final reductions for mass, kinetic energy, and total energy
     double mass, te;
     reductions(state, mass, te, fixed_data);
@@ -202,6 +226,7 @@ void perform_timestep(real3d const &state, real dt, int &direction_switch, Fixed
   if (direction_switch)
   {
     // x-direction first
+    //TODO: DONE freq change
     semi_discrete_step(state, state, state_tmp, dt / 3, DIR_X, fixed_data);
     semi_discrete_step(state, state_tmp, state_tmp, dt / 2, DIR_X, fixed_data);
     semi_discrete_step(state, state_tmp, state, dt / 1, DIR_X, fixed_data);
@@ -259,10 +284,12 @@ void semi_discrete_step(realConst3d state_init, real3d const &state_forcing, rea
   {
     // Set the halo values for this MPI task's fluid state in the z-direction
     yakl::timer_start("halo z");
+    // TODO: no MPI call for hiding freq
     set_halo_values_z(state_forcing, fixed_data);
     yakl::timer_stop("halo z");
     // Compute the time tendencies for the fluid state in the z-direction
     yakl::timer_start("tendencies z");
+    // TODO: no MPI call for hiding freq
     compute_tendencies_z(state_forcing, tend, dt, fixed_data);
     yakl::timer_stop("tendencies z");
   }
@@ -426,6 +453,8 @@ void compute_tendencies_z(realConst3d state, real3d const &tend, real dt, Fixed_
 // Set this MPI task's halo values in the x-direction. This routine will require MPI
 void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
 {
+  auto &q = yakl::sycl_default_stream();
+
   auto &nx = fixed_data.nx;
   auto &nz = fixed_data.nz;
   auto &k_beg = fixed_data.k_beg;
@@ -462,15 +491,13 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
   real3dHost recvbuf_r_cpu("recvbuf_r", NUM_VARS, nz, hs); // Buffer to receive data from the right MPI rank (CPU copy)
 #endif
 
-// Prepost receives
-#ifdef GPU_AWARE_MPI
-  yakl::fence();
-  ierr = MPI_Irecv(recvbuf_l.data(), hs * nz * NUM_VARS, mpi_type, left_rank, 0, MPI_COMM_WORLD, &req_r[0]);
-  ierr = MPI_Irecv(recvbuf_r.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 1, MPI_COMM_WORLD, &req_r[1]);
-#else
-  ierr = MPI_Irecv(recvbuf_l_cpu.data(), hs * nz * NUM_VARS, mpi_type, left_rank, 0, MPI_COMM_WORLD, &req_r[0]);
-  ierr = MPI_Irecv(recvbuf_r_cpu.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 1, MPI_COMM_WORLD, &req_r[1]);
-#endif
+  // kernel 
+  // MPI_Irecv
+  // MPI_Isend
+  // freq. change
+  // wait all send
+  // wait all recv
+  // kernel 
 
   // Pack the send buffers
   //  for (ll=0; ll<NUM_VARS; ll++) {
@@ -499,9 +526,28 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
   ierr = MPI_Isend(sendbuf_l_cpu.data(), hs * nz * NUM_VARS, mpi_type, left_rank, 1, MPI_COMM_WORLD, &req_s[0]);
   ierr = MPI_Isend(sendbuf_r_cpu.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 0, MPI_COMM_WORLD, &req_s[1]);
 #endif
-
+#ifdef GPU_AWARE_MPI
+  yakl::fence();
+  ierr = MPI_Irecv(recvbuf_l.data(), hs * nz * NUM_VARS, mpi_type, left_rank, 0, MPI_COMM_WORLD, &req_r[0]);
+  ierr = MPI_Irecv(recvbuf_r.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 1, MPI_COMM_WORLD, &req_r[1]);
+#else
+  ierr = MPI_Irecv(recvbuf_l_cpu.data(), hs * nz * NUM_VARS, mpi_type, left_rank, 0, MPI_COMM_WORLD, &req_r[0]);
+  ierr = MPI_Irecv(recvbuf_r_cpu.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 1, MPI_COMM_WORLD, &req_r[1]);
+#endif
+  // add freq. change
+   #if HIDING == 1
+    q.submit(0, 1450, [&](sycl::handler& cgh) {
+    cgh.single_task([=]() {
+      // Do nothing
+    });
+  });  // Set frequency
+  #endif
+  // Wait for sends to finish
+  ierr = MPI_Waitall(2, req_s, MPI_STATUSES_IGNORE);
+  // MOVED AFTER IRecv
   // Wait for receives to finish
   ierr = MPI_Waitall(2, req_r, MPI_STATUSES_IGNORE);
+  
 
 #ifndef GPU_AWARE_MPI
   // This will copy from host to GPU
@@ -514,16 +560,25 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
   //  for (ll=0; ll<NUM_VARS; ll++) {
   //    for (k=0; k<nz; k++) {
   //      for (s=0; s<hs; s++) {
+  #if HIDING == 1
   parallel_for(
       SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
         state(ll, k + hs, s) = recvbuf_l(ll, k, s);
         state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
       },
       "set_halo_values_x_3");
+  #else
+    parallel_for(0, 1450,
+      SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
+        state(ll, k + hs, s) = recvbuf_l(ll, k, s);
+        state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
+      },
+      "set_halo_values_x_3");
+  #endif
   yakl::fence();
-
-  // Wait for sends to finish
-  ierr = MPI_Waitall(2, req_s, MPI_STATUSES_IGNORE);
+  // MOVED after Isend
+  // // Wait for sends to finish
+  // ierr = MPI_Waitall(2, req_s, MPI_STATUSES_IGNORE);
 
   if (data_spec_int == DATA_SPEC_INJECTION)
   {
@@ -626,6 +681,24 @@ void init(real3d &state, real &dt, Fixed_data &fixed_data)
     printf("dx,dz: %lf %lf\n", dx, dz);
     printf("dt: %lf\n", dt);
   }
+  // freq. change
+  #if HIDING == 1
+    auto &q = yakl::sycl_default_stream();
+    q.submit(0, 1450, [&](sycl::handler& cgh) {
+    cgh.single_task([=]() {
+      // Do nothing
+    });
+  });  // Set frequency
+  #endif
+  #if HIDING == 0
+    auto &q = yakl::sycl_default_stream();
+    q.submit(0, 1450, [&](sycl::handler& cgh) {
+    cgh.single_task([=]() {
+      // Do nothing
+    });
+  }).wait();  // S
+  #endif
+
   // Want to make sure this info is displayed before further output
   ierr = MPI_Barrier(MPI_COMM_WORLD);
 
@@ -898,106 +971,107 @@ YAKL_INLINE real sample_ellipse_cosine(real x, real z, real amp, real x0, real z
 // If it's too cumbersome, you can comment the I/O out, but you'll miss out on some potentially cool graphics
 void output(realConst3d state, real etime, int &num_out, Fixed_data const &fixed_data)
 {
-  auto &nx = fixed_data.nx;
-  auto &nz = fixed_data.nz;
-  auto &i_beg = fixed_data.i_beg;
-  auto &k_beg = fixed_data.k_beg;
-  auto &mainproc = fixed_data.mainproc;
-  auto &hy_dens_cell = fixed_data.hy_dens_cell;
-  auto &hy_dens_theta_cell = fixed_data.hy_dens_theta_cell;
+  return;
+  // auto &nx = fixed_data.nx;
+  // auto &nz = fixed_data.nz;
+  // auto &i_beg = fixed_data.i_beg;
+  // auto &k_beg = fixed_data.k_beg;
+  // auto &mainproc = fixed_data.mainproc;
+  // auto &hy_dens_cell = fixed_data.hy_dens_cell;
+  // auto &hy_dens_theta_cell = fixed_data.hy_dens_theta_cell;
 
-  int ncid, t_dimid, x_dimid, z_dimid, dens_varid, uwnd_varid, wwnd_varid, theta_varid, t_varid, dimids[3];
-  MPI_Offset st1[1], ct1[1], st3[3], ct3[3];
-  // Inform the user
-  if (mainproc)
-  {
-    printf("*** OUTPUT ***\n");
-  }
-  // Allocate some (big) temp arrays
-  doub2d dens("dens", nz, nx);
-  doub2d uwnd("uwnd", nz, nx);
-  doub2d wwnd("wwnd", nz, nx);
-  doub2d theta("theta", nz, nx);
+  // int ncid, t_dimid, x_dimid, z_dimid, dens_varid, uwnd_varid, wwnd_varid, theta_varid, t_varid, dimids[3];
+  // MPI_Offset st1[1], ct1[1], st3[3], ct3[3];
+  // // Inform the user
+  // if (mainproc)
+  // {
+  //   printf("*** OUTPUT ***\n");
+  // }
+  // // Allocate some (big) temp arrays
+  // doub2d dens("dens", nz, nx);
+  // doub2d uwnd("uwnd", nz, nx);
+  // doub2d wwnd("wwnd", nz, nx);
+  // doub2d theta("theta", nz, nx);
 
-  // If the elapsed time is zero, create the file. Otherwise, open the file
-  if (etime == 0)
-  {
-    // Create the file
-    ncwrap(ncmpi_create(MPI_COMM_WORLD, "output.nc", NC_CLOBBER, MPI_INFO_NULL, &ncid), __LINE__);
-    // Create the dimensions
-    ncwrap(ncmpi_def_dim(ncid, "t", (MPI_Offset)NC_UNLIMITED, &t_dimid), __LINE__);
-    ncwrap(ncmpi_def_dim(ncid, "x", (MPI_Offset)nx_glob, &x_dimid), __LINE__);
-    ncwrap(ncmpi_def_dim(ncid, "z", (MPI_Offset)nz_glob, &z_dimid), __LINE__);
-    // Create the variables
-    dimids[0] = t_dimid;
-    ncwrap(ncmpi_def_var(ncid, "t", NC_DOUBLE, 1, dimids, &t_varid), __LINE__);
-    dimids[0] = t_dimid;
-    dimids[1] = z_dimid;
-    dimids[2] = x_dimid;
-    ncwrap(ncmpi_def_var(ncid, "dens", NC_DOUBLE, 3, dimids, &dens_varid), __LINE__);
-    ncwrap(ncmpi_def_var(ncid, "uwnd", NC_DOUBLE, 3, dimids, &uwnd_varid), __LINE__);
-    ncwrap(ncmpi_def_var(ncid, "wwnd", NC_DOUBLE, 3, dimids, &wwnd_varid), __LINE__);
-    ncwrap(ncmpi_def_var(ncid, "theta", NC_DOUBLE, 3, dimids, &theta_varid), __LINE__);
-    // End "define" mode
-    ncwrap(ncmpi_enddef(ncid), __LINE__);
-  }
-  else
-  {
-    // Open the file
-    ncwrap(ncmpi_open(MPI_COMM_WORLD, "output.nc", NC_WRITE, MPI_INFO_NULL, &ncid), __LINE__);
-    // Get the variable IDs
-    ncwrap(ncmpi_inq_varid(ncid, "dens", &dens_varid), __LINE__);
-    ncwrap(ncmpi_inq_varid(ncid, "uwnd", &uwnd_varid), __LINE__);
-    ncwrap(ncmpi_inq_varid(ncid, "wwnd", &wwnd_varid), __LINE__);
-    ncwrap(ncmpi_inq_varid(ncid, "theta", &theta_varid), __LINE__);
-    ncwrap(ncmpi_inq_varid(ncid, "t", &t_varid), __LINE__);
-  }
+  // // If the elapsed time is zero, create the file. Otherwise, open the file
+  // if (etime == 0)
+  // {
+  //   // Create the file
+  //   ncwrap(ncmpi_create(MPI_COMM_WORLD, "output.nc", NC_CLOBBER, MPI_INFO_NULL, &ncid), __LINE__);
+  //   // Create the dimensions
+  //   ncwrap(ncmpi_def_dim(ncid, "t", (MPI_Offset)NC_UNLIMITED, &t_dimid), __LINE__);
+  //   ncwrap(ncmpi_def_dim(ncid, "x", (MPI_Offset)nx_glob, &x_dimid), __LINE__);
+  //   ncwrap(ncmpi_def_dim(ncid, "z", (MPI_Offset)nz_glob, &z_dimid), __LINE__);
+  //   // Create the variables
+  //   dimids[0] = t_dimid;
+  //   ncwrap(ncmpi_def_var(ncid, "t", NC_DOUBLE, 1, dimids, &t_varid), __LINE__);
+  //   dimids[0] = t_dimid;
+  //   dimids[1] = z_dimid;
+  //   dimids[2] = x_dimid;
+  //   ncwrap(ncmpi_def_var(ncid, "dens", NC_DOUBLE, 3, dimids, &dens_varid), __LINE__);
+  //   ncwrap(ncmpi_def_var(ncid, "uwnd", NC_DOUBLE, 3, dimids, &uwnd_varid), __LINE__);
+  //   ncwrap(ncmpi_def_var(ncid, "wwnd", NC_DOUBLE, 3, dimids, &wwnd_varid), __LINE__);
+  //   ncwrap(ncmpi_def_var(ncid, "theta", NC_DOUBLE, 3, dimids, &theta_varid), __LINE__);
+  //   // End "define" mode
+  //   ncwrap(ncmpi_enddef(ncid), __LINE__);
+  // }
+  // else
+  // {
+  //   // Open the file
+  //   ncwrap(ncmpi_open(MPI_COMM_WORLD, "output.nc", NC_WRITE, MPI_INFO_NULL, &ncid), __LINE__);
+  //   // Get the variable IDs
+  //   ncwrap(ncmpi_inq_varid(ncid, "dens", &dens_varid), __LINE__);
+  //   ncwrap(ncmpi_inq_varid(ncid, "uwnd", &uwnd_varid), __LINE__);
+  //   ncwrap(ncmpi_inq_varid(ncid, "wwnd", &wwnd_varid), __LINE__);
+  //   ncwrap(ncmpi_inq_varid(ncid, "theta", &theta_varid), __LINE__);
+  //   ncwrap(ncmpi_inq_varid(ncid, "t", &t_varid), __LINE__);
+  // }
 
-  // Store perturbed values in the temp arrays for output
-  //  for (k=0; k<nz; k++) {
-  //    for (i=0; i<nx; i++) {
-  parallel_for(
-      SimpleBounds<2>(nz, nx), YAKL_LAMBDA(int k, int i) {
-        dens(k, i) = state(ID_DENS, hs + k, hs + i);
-        uwnd(k, i) = state(ID_UMOM, hs + k, hs + i) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i));
-        wwnd(k, i) = state(ID_WMOM, hs + k, hs + i) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i));
-        theta(k, i) = (state(ID_RHOT, hs + k, hs + i) + hy_dens_theta_cell(hs + k)) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i)) - hy_dens_theta_cell(hs + k) / hy_dens_cell(hs + k);
-      },
-      "output_1");
-  yakl::fence();
+  // // Store perturbed values in the temp arrays for output
+  // //  for (k=0; k<nz; k++) {
+  // //    for (i=0; i<nx; i++) {
+  // parallel_for(
+  //     SimpleBounds<2>(nz, nx), YAKL_LAMBDA(int k, int i) {
+  //       dens(k, i) = state(ID_DENS, hs + k, hs + i);
+  //       uwnd(k, i) = state(ID_UMOM, hs + k, hs + i) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i));
+  //       wwnd(k, i) = state(ID_WMOM, hs + k, hs + i) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i));
+  //       theta(k, i) = (state(ID_RHOT, hs + k, hs + i) + hy_dens_theta_cell(hs + k)) / (hy_dens_cell(hs + k) + state(ID_DENS, hs + k, hs + i)) - hy_dens_theta_cell(hs + k) / hy_dens_cell(hs + k);
+  //     },
+  //     "output_1");
+  // yakl::fence();
 
-  // Write the grid data to file with all the processes writing collectively
-  st3[0] = num_out;
-  st3[1] = k_beg;
-  st3[2] = i_beg;
-  ct3[0] = 1;
-  ct3[1] = nz;
-  ct3[2] = nx;
-  ncwrap(ncmpi_put_vara_double_all(ncid, dens_varid, st3, ct3, dens.createHostCopy().data()), __LINE__);
-  ncwrap(ncmpi_put_vara_double_all(ncid, uwnd_varid, st3, ct3, uwnd.createHostCopy().data()), __LINE__);
-  ncwrap(ncmpi_put_vara_double_all(ncid, wwnd_varid, st3, ct3, wwnd.createHostCopy().data()), __LINE__);
-  ncwrap(ncmpi_put_vara_double_all(ncid, theta_varid, st3, ct3, theta.createHostCopy().data()), __LINE__);
+  // // Write the grid data to file with all the processes writing collectively
+  // st3[0] = num_out;
+  // st3[1] = k_beg;
+  // st3[2] = i_beg;
+  // ct3[0] = 1;
+  // ct3[1] = nz;
+  // ct3[2] = nx;
+  // ncwrap(ncmpi_put_vara_double_all(ncid, dens_varid, st3, ct3, dens.createHostCopy().data()), __LINE__);
+  // ncwrap(ncmpi_put_vara_double_all(ncid, uwnd_varid, st3, ct3, uwnd.createHostCopy().data()), __LINE__);
+  // ncwrap(ncmpi_put_vara_double_all(ncid, wwnd_varid, st3, ct3, wwnd.createHostCopy().data()), __LINE__);
+  // ncwrap(ncmpi_put_vara_double_all(ncid, theta_varid, st3, ct3, theta.createHostCopy().data()), __LINE__);
 
-  // Only the main process needs to write the elapsed time
-  // Begin "independent" write mode
-  ncwrap(ncmpi_begin_indep_data(ncid), __LINE__);
-  // write elapsed time to file
-  if (mainproc)
-  {
-    st1[0] = num_out;
-    ct1[0] = 1;
-    double etimearr[1];
-    etimearr[0] = etime;
-    ncwrap(ncmpi_put_vara_double(ncid, t_varid, st1, ct1, etimearr), __LINE__);
-  }
-  // End "independent" write mode
-  ncwrap(ncmpi_end_indep_data(ncid), __LINE__);
+  // // Only the main process needs to write the elapsed time
+  // // Begin "independent" write mode
+  // ncwrap(ncmpi_begin_indep_data(ncid), __LINE__);
+  // // write elapsed time to file
+  // if (mainproc)
+  // {
+  //   st1[0] = num_out;
+  //   ct1[0] = 1;
+  //   double etimearr[1];
+  //   etimearr[0] = etime;
+  //   ncwrap(ncmpi_put_vara_double(ncid, t_varid, st1, ct1, etimearr), __LINE__);
+  // }
+  // // End "independent" write mode
+  // ncwrap(ncmpi_end_indep_data(ncid), __LINE__);
 
-  // Close the file
-  ncwrap(ncmpi_close(ncid), __LINE__);
+  // // Close the file
+  // ncwrap(ncmpi_close(ncid), __LINE__);
 
-  // Increment the number of outputs
-  num_out = num_out + 1;
+  // // Increment the number of outputs
+  // num_out = num_out + 1;
 }
 
 // Error reporting routine for the PNetCDF I/O
@@ -1049,6 +1123,19 @@ void reductions(realConst3d state, double &mass, double &te, Fixed_data const &f
   loc[0] = mass;
   loc[1] = te;
   int ierr = MPI_Allreduce(loc, glob, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+//  MPI_Request request;
+// // Continue with other computations or operations while the reduction is in progress
+// int num_processes = 4;
+// // Wait for the completion of the asynchronous allreduce operation for all processes
+// MPI_Status status; // Array to hold the status of completed requests for all processes
+
+// // Collect request handles for all processes
+// MPI_Iallreduce(loc, glob, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD, &request);
+
+
+// // Wait for all processes to complete their asynchronous allreduce operations
+// int ierr = MPI_Wait(&request, MPI_STATUS_IGNORE);
+
   mass = glob[0];
   te = glob[1];
 }
