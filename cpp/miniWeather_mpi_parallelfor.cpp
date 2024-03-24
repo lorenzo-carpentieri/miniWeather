@@ -84,8 +84,23 @@ void reductions(realConst3d state, double &mass, double &te, Fixed_data const &f
 // THE MAIN PROGRAM STARTS HERE
 ///////////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char **argv)
-{
+{ 
   MPI_Init(&argc, &argv);
+  int comm_rank = -1;
+  MPI_Comm_rank(MPI_COMM_WORLD, &comm_rank);
+  if (comm_rank == 0){
+    #ifdef PER_APP
+      std::cout<< "PER_APP" << std::endl;
+    #elif PER_KERNEL
+      std::cout<< "PER_KERNEL" << std::endl;
+    #else
+      #if HIDING == 1
+        std::cout<< "PER_PHASE + HIDING"<< std::endl;
+      #else
+        std::cout<< "PER_PHASE + NO_HIDING"<< std::endl;
+      #endif
+    #endif
+  }
   yakl::init();
   {
     Fixed_data fixed_data;
@@ -155,8 +170,7 @@ int main(int argc, char **argv)
     }
     yakl::fence();
 
-    int comm_rank = -1;
-    MPI_Comm_rank(MPI_COMM_WORLD, &comm_rank);
+  
 
     MPI_Comm local_comm;
     MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, comm_rank, MPI_INFO_NULL, &local_comm);
@@ -185,7 +199,7 @@ int main(int argc, char **argv)
     if (mainproc)
     {
       std::cout << "Total time chrono[ms]: " << total_time_chrono.count() << "\n";
-      std::cout << "Total time mpi[ms]: " << max_time << "\n";
+      std::cout << "Total time mpi[s]: " << max_time << "\n";
     }
     double total_energy=0;
     MPI_Reduce(&energy_per_gpu, &total_energy, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -326,7 +340,13 @@ void compute_tendencies_x(realConst3d state, real3d const &tend, real dt, Fixed_
   auto &hy_dens_theta_cell = fixed_data.hy_dens_theta_cell;
 
   real3d flux("flux", NUM_VARS, nz, nx + 1);
-
+  #ifdef PER_PHASE
+    yakl::sycl_default_stream().submit(0, 900, [&](sycl::handler& cgh) {
+    cgh.single_task([=]() {
+      // Do nothing
+    });
+  });  // Set frequency
+  #endif
   // Compute the hyperviscosity coefficient
   real hv_coef = -hv_beta * dx / (16 * dt);
   // Compute fluxes in the x-direction for each cell
@@ -535,12 +555,14 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
   ierr = MPI_Irecv(recvbuf_r_cpu.data(), hs * nz * NUM_VARS, mpi_type, right_rank, 1, MPI_COMM_WORLD, &req_r[1]);
 #endif
   // add freq. change
+  #ifdef PER_PHASE
    #if HIDING == 1
-    q.submit(0, 1450, [&](sycl::handler& cgh) {
+    yakl::sycl_default_stream().submit(0, 250, [&](sycl::handler& cgh) {
     cgh.single_task([=]() {
       // Do nothing
     });
   });  // Set frequency
+  #endif
   #endif
   // Wait for sends to finish
   ierr = MPI_Waitall(2, req_s, MPI_STATUSES_IGNORE);
@@ -560,20 +582,30 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
   //  for (ll=0; ll<NUM_VARS; ll++) {
   //    for (k=0; k<nz; k++) {
   //      for (s=0; s<hs; s++) {
-  #if HIDING == 1
-  parallel_for(
-      SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
-        state(ll, k + hs, s) = recvbuf_l(ll, k, s);
-        state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
-      },
-      "set_halo_values_x_3");
+  #ifdef PER_PHASE 
+    #if HIDING == 1
+    parallel_for(
+        SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
+          state(ll, k + hs, s) = recvbuf_l(ll, k, s);
+          state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
+        },
+        "set_halo_values_x_3");
+    #else
+      parallel_for(0, 250,
+        SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
+          state(ll, k + hs, s) = recvbuf_l(ll, k, s);
+          state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
+        },
+        "set_halo_values_x_3");
+    #endif
   #else
-    parallel_for(0, 1450,
-      SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
-        state(ll, k + hs, s) = recvbuf_l(ll, k, s);
-        state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
-      },
-      "set_halo_values_x_3");
+        // PER_APP and PER_KERNEL are handled with the frequency map
+       parallel_for(
+        SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
+          state(ll, k + hs, s) = recvbuf_l(ll, k, s);
+          state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
+        },
+        "set_halo_values_x_3");
   #endif
   yakl::fence();
   // MOVED after Isend
@@ -681,23 +713,6 @@ void init(real3d &state, real &dt, Fixed_data &fixed_data)
     printf("dx,dz: %lf %lf\n", dx, dz);
     printf("dt: %lf\n", dt);
   }
-  // freq. change
-  #if HIDING == 1
-    auto &q = yakl::sycl_default_stream();
-    q.submit(0, 1450, [&](sycl::handler& cgh) {
-    cgh.single_task([=]() {
-      // Do nothing
-    });
-  });  // Set frequency
-  #endif
-  #if HIDING == 0
-    auto &q = yakl::sycl_default_stream();
-    q.submit(0, 1450, [&](sycl::handler& cgh) {
-    cgh.single_task([=]() {
-      // Do nothing
-    });
-  }).wait();  // S
-  #endif
 
   // Want to make sure this info is displayed before further output
   ierr = MPI_Barrier(MPI_COMM_WORLD);

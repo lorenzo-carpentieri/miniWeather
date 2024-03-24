@@ -1,5 +1,5 @@
 # num of runs
-NUM_RUNS=20
+NUM_RUNS=50
 # create the path to build directory
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BUILD_DIR=$SCRIPT_DIR/build
