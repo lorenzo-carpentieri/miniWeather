@@ -1,4 +1,4 @@
-LOG_DIR="logs_all"
+LOG_DIR="logs_all_60runs"
 echo HIDING
 python3 ./parse_miniweather_results.py ./${LOG_DIR}/miniweather_hiding.log
 

@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <mpi.h>
 #include "const.h"
-#include "pnetcdf.h"
+// #include "pnetcdf.h"
 #include <ctime>
 #include <chrono>
 
@@ -1100,12 +1100,12 @@ void output(realConst3d state, real etime, int &num_out, Fixed_data const &fixed
 // Error reporting routine for the PNetCDF I/O
 void ncwrap(int ierr, int line)
 {
-  if (ierr != NC_NOERR)
-  {
-    printf("NetCDF Error at line: %d\n", line);
-    printf("%s\n", ncmpi_strerror(ierr));
-    exit(-1);
-  }
+  // if (ierr != NC_NOERR)
+  // {
+  //   printf("NetCDF Error at line: %d\n", line);
+  //   printf("%s\n", ncmpi_strerror(ierr));
+  //   exit(-1);
+  // }
 }
 
 void finalize()
