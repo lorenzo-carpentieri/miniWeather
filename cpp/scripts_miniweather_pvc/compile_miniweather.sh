@@ -17,4 +17,5 @@ cmake \
   -DMPI_HIDING=$HIDING \
   -DSIM_TIME=10 \
   -DLDFLAGS="-lpnetcdf" \
+  -DHARDWARE_VENDOR="Intel" \
   ..
