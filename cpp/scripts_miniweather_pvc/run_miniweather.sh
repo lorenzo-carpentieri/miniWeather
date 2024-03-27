@@ -1,9 +1,9 @@
 # num of runs
-NUM_RUNS=30
+NUM_RUNS=60
 # create the path to build directory
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BUILD_DIR=$SCRIPT_DIR/../build
-LOG_DIR=logs_all
+LOG_DIR=logs_all_60runs
 if [ ! -d "$SCRIPT_DIR/../${LOG_DIR}" ]; then
     # Create the directory
     mkdir -p "$SCRIPT_DIR/../${LOG_DIR}"

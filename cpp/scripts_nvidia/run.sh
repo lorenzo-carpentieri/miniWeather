@@ -1,9 +1,11 @@
 # num of runs
-NUM_RUNS=30
+NUM_GPUS=$1
+NUM_NODES=$2
+NUM_RUNS=$3
 # create the path to build directory
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BUILD_DIR=$SCRIPT_DIR/../build
-LOG_DIR=logs_all_${NUM_RUNS}runs
+LOG_DIR=logs_all_${NUM_GPUS}gpus_${NUM_NODES}nodes_${NUM_RUNS}runs
 if [ ! -d "$SCRIPT_DIR/../${LOG_DIR}" ]; then
     # Create the directory
     mkdir -p "$SCRIPT_DIR/../${LOG_DIR}"
@@ -25,7 +27,7 @@ core_freq=0
 for ((i=0; i<$NUM_RUNS;i++));
 do
     echo Run $i 
-    mpirun -n 4 ./parallelfor  >> ../${LOG_DIR}/miniweather_per_app.log
+    mpirun -n ${NUM_GPUS} ./parallelfor  >> ../${LOG_DIR}/miniweather_per_app.log
     nvidia-smi -ac $memfreq,$corefreq 
 done
 
@@ -37,7 +39,7 @@ make -j
 for ((i=0; i<$NUM_RUNS;i++));
 do
     echo Run $i 
-    mpirun -n 4 ./parallelfor  >> ../${LOG_DIR}/miniweather_per_kernel.log
+    mpirun -n ${NUM_GPUS} ./parallelfor  >> ../${LOG_DIR}/miniweather_per_kernel.log
     nvidia-smi -ac
     nvidia-smi -gc
 done
@@ -51,7 +53,7 @@ make -j
 for ((i=0; i<$NUM_RUNS;i++));
 do
     echo Run $i 
-    mpirun -n 4 ./parallelfor  >> ../${LOG_DIR}/miniweather_no_hiding.log
+    mpirun -n ${NUM_GPUS} ./parallelfor  >> ../${LOG_DIR}/miniweather_no_hiding.log
     nvidia-smi -ac
     nvidia-smi -gc
 done
@@ -64,7 +66,7 @@ make -j
 for ((i=0; i<$NUM_RUNS;i++));
 do
     echo Run $i 
-    mpirun -n 4 ./parallelfor  >> ../${LOG_DIR}/miniweather_hiding.log
+    mpirun -n ${NUM_GPUS} ./parallelfor  >> ../${LOG_DIR}/miniweather_hiding.log
     nvidia-smi -gc
     nvidia-smi -ac
 done

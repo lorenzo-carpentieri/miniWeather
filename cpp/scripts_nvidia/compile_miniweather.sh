@@ -1,7 +1,8 @@
 APPROACH=$1
 HIDING=$2
+CXX_COMPILER=$3
 cmake \
-  -DCMAKE_CXX_COMPILER="/opt/intel/oneapi/compiler/2024.0/bin/icpx" \
+  -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
   -DCMAKE_CXX_FLAGS="-lmpi -ffast-math -Wno-deprecated -fsycl -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend --cuda-gpu-arch=sm_80 -O3" \
   -DSYNERGY_SYCL_IMPL="DPC++" \
   -DSYNERGY_KERNEL_PROFILING=OFF \
