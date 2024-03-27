@@ -100,6 +100,14 @@ int main(int argc, char **argv)
         std::cout<< "PER_PHASE + NO_HIDING"<< std::endl;
       #endif
     #endif
+
+    #if VENDOR == Intel 
+      std::cout<< "Intel" << std::endl;
+    #elif VENDOR == NVIDIA
+      std::cout<< "NVIDIA" << std::endl;
+    #else
+        std::cout<< "AMD"<< std::endl;
+    #endif
   }
   yakl::init();
   {
