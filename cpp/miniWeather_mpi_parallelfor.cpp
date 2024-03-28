@@ -101,10 +101,10 @@ int main(int argc, char **argv)
       #endif
     #endif
 
-    #if VENDOR == Intel 
-      std::cout<< "Intel" << std::endl;
-    #elif VENDOR == NVIDIA
+    #ifdef NVIDIA
       std::cout<< "NVIDIA" << std::endl;
+    #elif INTEL
+      std::cout<< "Intel" << std::endl;
     #else
         std::cout<< "AMD"<< std::endl;
     #endif
