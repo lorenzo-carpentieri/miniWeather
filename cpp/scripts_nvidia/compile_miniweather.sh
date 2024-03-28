@@ -26,6 +26,6 @@ cmake \
   -DFREQ_SCALING_APPROACH="$APPROACH" \
   -DMPI_HIDING=$HIDING \
   -DSIM_TIME=10 \
-  -DLDFLAGS="-lpnetcdf" \
+  -DLDFLAGS="" \
   -DHARDWARE_VENDOR="NVIDIA" \
   ..

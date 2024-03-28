@@ -12,6 +12,19 @@ PATH_TO_MINIWEATHER_REPO=$3
 EXECUTABLES=("parallelfor_per_app" "parallelfor_per_kernel" "parallelfor_per_phase_no_hiding" "parallelfor_per_phase_hiding")
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
+for ((i=0; i<${#NUM_NODES[@]}; i++)); do
+    LOG_DIR=logs_"${NUM_GPUS[i]}"gpus_"${NUM_GPUS[i]}"nodes_${NUM_RUNS}runs
+
+    # Generate log dir for each configuration of GPUS 
+    if [ ! -d "$SCRIPT_DIR/../${LOG_DIR}" ]; then
+        # Create the directory
+        mkdir -p "$SCRIPT_DIR/../${LOG_DIR}"
+        echo "Directory created: $SCRIPT_DIR/../${LOG_DIR}"
+    else
+        echo "Directory already exists: $SCRIPT_DIR/../${LOG_DIR}"
+        rm -rf $SCRIPT_DIR/../${LOG_DIR}/*
+    fi
+done
 # miniweather must be compiled differently for each values of num_gpus to do weak scaling
 for ((i=0; i<${#NUM_GPUS[@]}; i++)); do    
     ${SCRIPT_DIR}/generate_executables.sh ${CXX_COMPILER} "${NUM_GPUS[i]}" "${NUM_NODES[i]}" ${NUM_RUNS}
