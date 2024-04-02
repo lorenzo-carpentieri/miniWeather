@@ -599,7 +599,12 @@ void set_halo_values_x(real3d const &state, Fixed_data const &fixed_data)
         },
         "set_halo_values_x_3");
     #else
-      parallel_for(0, 250,
+      yakl::sycl_default_stream().submit(0, 250, [&](sycl::handler& cgh) {
+        cgh.single_task([=]() {
+          // Do nothing
+        });
+      });  // Set frequency
+      parallel_for(0, 0,
         SimpleBounds<3>(NUM_VARS, nz, hs), YAKL_LAMBDA(int ll, int k, int s) {
           state(ll, k + hs, s) = recvbuf_l(ll, k, s);
           state(ll, k + hs, nx + hs + s) = recvbuf_r(ll, k, s);
